@@ -29,7 +29,7 @@ OUT  = os.path.join(HERE, "out")
 # must stay in sync with data/usr/libexec/tailscale-mullvad/patch-view.lua
 A_RENDER = ',t.config.manual?[e("li"'
 A_BLOCK  = "p=d.exports;e.default=p"
-MARK     = "/*tsmullvad:v6*/"
+MARK     = "/*tsmullvad:v7*/"
 
 
 def read(path):
