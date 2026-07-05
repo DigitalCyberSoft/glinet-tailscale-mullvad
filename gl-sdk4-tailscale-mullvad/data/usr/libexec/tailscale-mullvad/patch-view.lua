@@ -17,15 +17,16 @@ local ROOT   = os.getenv("TSMV_ROOT") or ""
 local VIEW   = ROOT .. "/www/views/gl-sdk4-ui-tailscaleview.common.js.gz"
 local BACKUP = VIEW .. ".tsmullvad-orig"
 local SHARE  = ROOT .. "/usr/share/tailscale-mullvad"
-local MARK   = "/*tsmullvad:v7*/"
+local MARK   = "/*tsmullvad:v8*/"
 
--- plain-string anchors in the minified bundle (verified in the feed's view
--- git-2025.244.27716-e9a0fdd AND the stock XE3000 4.8 bundle)
--- v2: the picker <li> goes BEFORE the `config.manual ? [exit-node...] : [wan/lan...]`
--- ternary, i.e. right under the "Custom Exit Node" row and always rendered; the
--- v1 anchor placed it inside the manual-on branch, hiding it behind that toggle.
-local A_RENDER = ',t.config.manual?[e("li"'
-local A_BLOCK  = "p=d.exports;e.default=p"   -- wrap component options before export
+-- Whitespace-tolerant Lua-pattern anchors. The feed now ships a BEAUTIFIED view
+-- bundle, so exact-string anchors would break on reformatting; %s* absorbs any
+-- spacing/newlines, so these match both the minified stock bundle and our beautified
+-- one. Render: the picker <li> goes BEFORE the
+-- `config.manual ? [exit-node...] : [wan/lan...]` ternary (always rendered, right
+-- under the "Custom Exit Node" row). Magic chars (.?[(%) are %-escaped.
+local A_RENDER = ',%s*t%.config%.manual%s*%?%s*%[e%("li"'
+local A_BLOCK  = "p%s*=%s*d%.exports;%s*e%.default%s*=%s*p"  -- wrap options before export
 
 local function die(msg)
     io.stderr:write("tsmullvad patch-view: " .. msg .. "\n")
@@ -59,15 +60,15 @@ local function write_file(path, data)
     f:close()
 end
 
-local function count_plain(s, needle)
+local function count_pat(s, pat)
     local n, from = 0, 1
     while true do
-        local i = string.find(s, needle, from, true)
+        local i, j = string.find(s, pat, from)
         if not i then
             return n
         end
         n = n + 1
-        from = i + 1
+        from = j + 1
     end
 end
 
@@ -120,19 +121,19 @@ local function apply()
     render = render:gsub("%s+$", "")
     block  = block:gsub("%s+$", "")
 
-    if count_plain(src, A_RENDER) ~= 1 then
+    if count_pat(src, A_RENDER) ~= 1 then
         die("render anchor not found exactly once - unsupported view bundle version, not patching")
     end
-    if count_plain(src, A_BLOCK) ~= 1 then
+    if count_pat(src, A_BLOCK) ~= 1 then
         die("block anchor not found exactly once - unsupported view bundle version, not patching")
     end
 
-    local i = string.find(src, A_RENDER, 1, true)
+    local i = string.find(src, A_RENDER)
     src = src:sub(1, i - 1) .. "," .. render .. src:sub(i)
 
-    local j = string.find(src, A_BLOCK, 1, true)
+    local j, jend = string.find(src, A_BLOCK)
     src = src:sub(1, j - 1) .. "p=d.exports;(" .. block .. ")(p);e.default=p"
-          .. src:sub(j + #A_BLOCK)
+          .. src:sub(jend + 1)
 
     src = MARK .. src
 

@@ -27,9 +27,11 @@ PKG  = os.path.join(HERE, "gl-sdk4-tailscale-mullvad")
 OUT  = os.path.join(HERE, "out")
 
 # must stay in sync with data/usr/libexec/tailscale-mullvad/patch-view.lua
-A_RENDER = ',t.config.manual?[e("li"'
-A_BLOCK  = "p=d.exports;e.default=p"
-MARK     = "/*tsmullvad:v7*/"
+# whitespace-tolerant regex anchors -- the feed ships a beautified bundle now, so
+# exact-string anchors would break on reformatting.
+A_RENDER = r',\s*t\.config\.manual\s*\?\s*\[e\("li"'
+A_BLOCK  = r'p\s*=\s*d\.exports;\s*e\.default\s*=\s*p'
+MARK     = "/*tsmullvad:v8*/"
 
 
 def read(path):
@@ -51,14 +53,14 @@ def node_check(js, label):
 
 def simulate_patch(view_src, render, block):
     """Python mirror of patch-view.lua apply(); returns the patched source."""
-    for name, anchor in (("render", A_RENDER), ("block", A_BLOCK)):
-        n = view_src.count(anchor)
+    for name, pat in (("render", A_RENDER), ("block", A_BLOCK)):
+        n = len(re.findall(pat, view_src))
         if n != 1:
             sys.exit(f"verify: {name} anchor matched {n} times in reference view.js (need exactly 1)")
-    i = view_src.index(A_RENDER)
-    out = view_src[:i] + "," + render + view_src[i:]
-    j = out.index(A_BLOCK)
-    out = out[:j] + "p=d.exports;(" + block + ")(p);e.default=p" + out[j + len(A_BLOCK):]
+    m = re.search(A_RENDER, view_src)
+    out = view_src[:m.start()] + "," + render + view_src[m.start():]
+    m2 = re.search(A_BLOCK, out)
+    out = out[:m2.start()] + "p=d.exports;(" + block + ")(p);e.default=p" + out[m2.end():]
     return MARK + out
 
 
