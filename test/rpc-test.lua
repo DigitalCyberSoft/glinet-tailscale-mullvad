@@ -32,8 +32,9 @@ local function stub_spawn(cmd)
         if w == "status" then is_status = true end
     end
     return {
+        -- match the DEVICE shim exactly: no stderr_read_all (GL's ngx.pipe
+        -- lacks it; calling it crashed 0.1.4 in production)
         stdout_read_all = function() return is_status and stub_status_body or "" end,
-        stderr_read_all = function() return "" end,
         wait = function() return true, "exit", 0 end,
     }
 end
@@ -152,6 +153,15 @@ check(r.active == true and r.current == mull_ip and r.current_cc ~= nil,
 uci_store["tailscale.settings.enabled"] = "0"
 r = M.get_nodes({})
 check(r.supported == false, "get_nodes: unsupported when tailscale disabled")
+
+-- (i) truncated status output (timeout killed the CLI mid-write) must yield a
+-- clean unsupported result, not a lua error escaping to nginx
+uci_store["tailscale.settings.enabled"] = "1"
+stub_status_body = status_json:sub(1, math.floor(#status_json / 2))
+local okc, rt = pcall(M.get_nodes, {})
+check(okc and rt.supported == false and rt.reason == "status_unavailable",
+      "get_nodes: truncated status JSON handled without error")
+stub_status_body = status_json
 
 if failures > 0 then
     print(failures .. " FAILURES")

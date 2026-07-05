@@ -10,7 +10,7 @@ ja:{label:"Mullvad出口ノード",tips:"インターネットトラフィック
 };
 function mvFlag(cc){return String(cc||"").toUpperCase().replace(/[A-Z]/g,function(ch){return String.fromCodePoint(127397+ch.charCodeAt(0))})}
 function mvSid(){return decodeURIComponent((document.cookie.match(/(?:^|;\s*)Admin-Token=([^;]*)/)||[])[1]||"")}
-function mvCall(method,args){return fetch("/rpc",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({jsonrpc:"2.0",id:Date.now()%1e9,method:"call",params:[mvSid(),"mullvad",method,args||{}]})}).then(function(r){return r.json()}).then(function(r){if(r.error)throw new Error(r.error.message||"rpc error");return r.result})}
+function mvCall(method,args){return fetch("/rpc",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({jsonrpc:"2.0",id:Date.now()%1e9,method:"call",params:[mvSid(),"mullvad",method,args||{}]})}).then(function(r){if(!r.ok)throw new Error("RPC HTTP "+r.status);return r.json().catch(function(){throw new Error("RPC returned non-JSON")})}).then(function(r){if(r.error)throw new Error(r.error.message||"rpc error");return r.result})}
 var mvData=c.data;
 c.data=function(){var d=mvData.call(this);d.mv={on:!1,ready:!1,err:!1,loading:!1,busy:!1,stale:!1,active:!1,current:"",curLabel:"",countries:[],cc:"",city:""};return d};
 c.computed=c.computed||{};

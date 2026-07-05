@@ -6,6 +6,8 @@ Requires the [Tailscale Mullvad add-on](https://tailscale.com/kb/1258/mullvad-ex
 enabled on your tailnet **and the router assigned to Mullvad** in the Tailscale
 admin console (Mullvad access is per-device).
 
+![GL.iNet Tailscale panel with the Mullvad picker: green active indicator (flag + city) on the row label, country select with flag, City row with Apply/Disable.](glinet-mullvad.png)
+
 Companion to [glinet-tailscale-feed](https://github.com/DigitalCyberSoft/glinet-tailscale-feed)
 (which restores the Tailscale panel itself). The built ipk is published through
 that same feed: `tools/release.sh` stages it into the feed checkout's `gui/`

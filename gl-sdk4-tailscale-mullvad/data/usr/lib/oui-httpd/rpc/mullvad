@@ -20,8 +20,12 @@ local function tailscale_status(wait_time)
     if r1 then
         local data = r1:stdout_read_all()
         if data and string.len(data) ~= 0 then
-            local r = cjson.decode(data)
-            if r and type(r) == "table" then
+            -- cjson.decode RAISES on malformed input, and `timeout` can kill the
+            -- CLI mid-write of a large peer list, truncating the JSON. An
+            -- unprotected decode turns that into a lua error -> nginx 500 HTML
+            -- page -> "<html>... is not valid JSON" toast in the panel.
+            local ok, r = pcall(cjson.decode, data)
+            if ok and r and type(r) == "table" then
                 return r
             end
         end
@@ -229,10 +233,14 @@ function M.set_exit_node(params)
     if not proc then
         return { err_code = -1, err_msg = "failed to spawn tailscale set" }
     end
-    local stderr = proc:stderr_read_all()
-    local ok, _, status = proc:wait()
-    if not ok or (status and status ~= 0) then
-        return { err_code = -1, err_msg = "tailscale set failed: " .. (stderr or "unknown error") }
+    -- GL's ngx.pipe proc implements stdout_read_all/wait but NOT
+    -- stderr_read_all (calling it crashed the handler into an nginx 500 HTML
+    -- page, 0.1.4). Only wait()'s verdict is available; the stock handler
+    -- ignores even that, so treat only an explicit false as failure.
+    local ok, reason, status = proc:wait()
+    if ok == false then
+        return { err_code = -1, err_msg = "tailscale set failed ("
+                 .. tostring(reason) .. " " .. tostring(status) .. ")" }
     end
 
     return { live = true }
