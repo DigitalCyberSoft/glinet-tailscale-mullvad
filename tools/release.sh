@@ -13,10 +13,13 @@ FEED=${FEED_DIR:-"$REPO/../glinet-tailscale"}
 [ -d "$FEED/gui" ] || { echo "feed checkout not found at $FEED (set FEED_DIR)"; exit 1; }
 
 "$REPO/build.py"
+VER=$(sed -n 's/^Version: //p' "$REPO/gl-sdk4-tailscale-mullvad/control")
 # drop any older revision first: assemble_site.sh copies gui/*_all.ipk wholesale,
-# and two revisions of the same package would both land in the served feed
+# and two revisions of the same package would both land in the served feed.
+# Copy ONLY the current control version - out/ accumulates every version ever
+# built, and a glob copy resurrects superseded ipks into the feed.
 rm -f "$FEED"/gui/gl-sdk4-tailscale-mullvad_*.ipk
-cp "$REPO"/out/gl-sdk4-tailscale-mullvad_*.ipk "$FEED/gui/"
+cp "$REPO/out/gl-sdk4-tailscale-mullvad_${VER}_all.ipk" "$FEED/gui/"
 echo "staged into $FEED/gui:"
 ls -l "$FEED"/gui/gl-sdk4-tailscale-mullvad_*.ipk
 echo "now commit + push the feed repo; CI publishes on the next build-feed run"

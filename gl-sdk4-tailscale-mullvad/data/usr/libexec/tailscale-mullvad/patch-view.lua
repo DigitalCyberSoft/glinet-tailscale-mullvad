@@ -17,7 +17,7 @@ local ROOT   = os.getenv("TSMV_ROOT") or ""
 local VIEW   = ROOT .. "/www/views/gl-sdk4-ui-tailscaleview.common.js.gz"
 local BACKUP = VIEW .. ".tsmullvad-orig"
 local SHARE  = ROOT .. "/usr/share/tailscale-mullvad"
-local MARK   = "/*tsmullvad:v4*/"
+local MARK   = "/*tsmullvad:v5*/"
 
 -- plain-string anchors in the minified bundle (verified in the feed's view
 -- git-2025.244.27716-e9a0fdd AND the stock XE3000 4.8 bundle)
