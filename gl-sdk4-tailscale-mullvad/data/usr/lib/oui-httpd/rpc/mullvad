@@ -1,0 +1,239 @@
+--[[
+    @object-name: mullvad
+    @object-desc: Mullvad exit-node selection for the Tailscale panel
+--]]
+
+local uci = require "uci"
+local cjson = require "cjson"
+local fs = require "oui.fs"
+local rpc = require "oui.rpc"
+
+local M = {}
+
+-- Mullvad nodes only exist in the FULL peer list (they are ordinary peers whose
+-- DNSName ends in .mullvad.ts.net), so unlike most callers in rpc/tailscale this
+-- handler must NOT pass --peers=false. With the Mullvad add-on enabled the JSON
+-- is large (~1MB for ~530 Mullvad peers on a real tailnet), hence the longer
+-- timeout than the stock handler's 2s.
+local function tailscale_status(wait_time)
+    local r1 = ngx.pipe.spawn({"timeout", wait_time or "10", "/usr/sbin/tailscale", "status", "--json"})
+    if r1 then
+        local data = r1:stdout_read_all()
+        if data and string.len(data) ~= 0 then
+            local r = cjson.decode(data)
+            if r and type(r) == "table" then
+                return r
+            end
+        end
+    end
+
+    return nil
+end
+
+local function is_mullvad(peer)
+    return peer.ExitNodeOption == true
+        and type(peer.DNSName) == "string"
+        and peer.DNSName:find(".mullvad.ts.net", 1, true) ~= nil
+        and type(peer.TailscaleIPs) == "table"
+        and peer.TailscaleIPs[1] ~= nil
+end
+
+local function current_exit_ip(r)
+    if r.ExitNodeStatus
+        and type(r.ExitNodeStatus) == "table"
+        and type(r.ExitNodeStatus.TailscaleIPs) == "table"
+        and r.ExitNodeStatus.TailscaleIPs[1] then
+        local addr = r.ExitNodeStatus.TailscaleIPs[1]
+        local pos = string.find(addr, "/")
+        if pos then
+            return string.sub(addr, 1, pos - 1)
+        end
+        return addr
+    end
+    return nil
+end
+
+-- true if candidate a is a better default pick for a city than b:
+-- online first, then higher Tailscale-assigned Priority, then stable name order
+local function better(a, b)
+    if a.online ~= b.online then return a.online end
+    if a.prio ~= b.prio then return a.prio > b.prio end
+    return a.host < b.host
+end
+
+--[[
+    @method-type: call
+    @method-name: get_nodes
+    @method-desc: List Mullvad exit nodes grouped country > city (one best node per city)
+
+    @out bool     supported      Whether the tailnet exposes Mullvad exit nodes to this device
+    @out bool     active         Whether any exit node is currently in use
+    @out string   ?current       Tailscale IP of the current exit node, if it is a Mullvad node
+    @out string   ?current_cc    Country code of the current Mullvad exit node
+    @out string   ?current_city  City of the current Mullvad exit node
+    @out array    ?countries     [{code,name,cities:[{name,n,ip,online}]}] sorted by name
+
+    @in-example:  {"jsonrpc":"2.0","id":1,"method":"call","params":["","mullvad","get_nodes",{}]}
+    @out-example: {"id":1,"jsonrpc":"2.0","result":{"supported":true,"active":false,"countries":[{"code":"CA","name":"Canada","cities":[{"name":"Toronto","n":29,"ip":"100.116.82.117","online":true}]}]}}
+--]]
+
+function M.get_nodes(params)
+    local c = uci.cursor()
+    if c:get("tailscale", "settings", "enabled") ~= "1" then
+        return { supported = false }
+    end
+
+    local r = tailscale_status()
+    if not r or not r.Peer or type(r.Peer) ~= "table" then
+        return { supported = false }
+    end
+
+    local cur = current_exit_ip(r)
+    local res = { supported = false, active = cur ~= nil }
+
+    local by_cc = {}
+    for _, v in pairs(r.Peer) do
+        if is_mullvad(v) and type(v.Location) == "table"
+            and v.Location.CountryCode and v.Location.City then
+            local cc = v.Location.CountryCode
+            local country = by_cc[cc]
+            if not country then
+                country = { code = cc, name = v.Location.Country or cc, cities = {} }
+                by_cc[cc] = country
+            end
+            local city = country.cities[v.Location.City]
+            if not city then
+                city = { name = v.Location.City, n = 0 }
+                country.cities[v.Location.City] = city
+            end
+            city.n = city.n + 1
+            local cand = {
+                ip = v.TailscaleIPs[1],
+                host = v.HostName or "",
+                prio = v.Location.Priority or 0,
+                online = v.Online == true,
+            }
+            if not city.best or better(cand, city.best) then
+                city.best = cand
+            end
+            if cur and v.TailscaleIPs[1] == cur then
+                res.current = cur
+                res.current_cc = cc
+                res.current_city = v.Location.City
+            end
+        end
+    end
+
+    local countries = {}
+    for _, country in pairs(by_cc) do
+        local cities = {}
+        for _, city in pairs(country.cities) do
+            cities[#cities + 1] = {
+                name = city.name,
+                n = city.n,
+                ip = city.best.ip,
+                online = city.best.online,
+            }
+        end
+        table.sort(cities, function(a, b) return a.name < b.name end)
+        countries[#countries + 1] = { code = country.code, name = country.name, cities = cities }
+    end
+    table.sort(countries, function(a, b) return a.name < b.name end)
+
+    if #countries > 0 then
+        res.supported = true
+        res.countries = countries
+    end
+
+    return res
+end
+
+--[[
+    @method-type: call
+    @method-name: set_exit_node
+    @method-desc: Select a Mullvad exit node ("" clears). Live pref change when an
+                  exit node is already in use; full gl_tailscale restart otherwise
+                  (first enable needs the fwmark policy rule and forced LAN/WAN
+                  route advertisement only the gl_tailscale up path builds).
+
+    @in  string   ip          Tailscale IP of a Mullvad exit node, or "" to clear
+    @out bool     ?live       true: applied without restart; false: gl_tailscale restart spawned
+    @out number   ?err_code   Error code [-1: apply failed]
+    @out string   ?err_msg    Error message
+
+    @in-example:  {"jsonrpc":"2.0","id":1,"method":"call","params":["","mullvad","set_exit_node",{"ip":"100.116.82.117"}]}
+    @out-example: {"id":1,"jsonrpc":"2.0","result":{"live":true}}
+--]]
+
+function M.set_exit_node(params)
+    local ip = params.ip
+
+    if type(ip) ~= "string" then
+        return rpc.ERROR_CODE_INVALID_PARAMS, "invalid ip"
+    end
+
+    local r = tailscale_status()
+    if not r then
+        return { err_code = -1, err_msg = "tailscale status unavailable" }
+    end
+
+    if ip ~= "" then
+        local found = false
+        if r.Peer and type(r.Peer) == "table" then
+            for _, v in pairs(r.Peer) do
+                if is_mullvad(v) and v.TailscaleIPs[1] == ip then
+                    found = true
+                    break
+                end
+            end
+        end
+        if not found then
+            return rpc.ERROR_CODE_INVALID_PARAMS, "not a Mullvad exit node: " .. ip
+        end
+    end
+
+    local active = current_exit_ip(r) ~= nil
+
+    local c = uci.cursor()
+    c:set("tailscale", "settings", "exit_node_ip", ip)
+    if ip ~= "" then
+        -- same mutual exclusion rpc/tailscale set_config enforces: a node cannot
+        -- use an exit node while advertising itself as one
+        c:set("tailscale", "settings", "advertise_exit_node", 0)
+    end
+    c:commit("tailscale")
+    fs.sync()
+
+    if not active and ip == "" then
+        -- nothing in use and nothing requested: uci is already clean
+        return { live = true }
+    end
+
+    if not active then
+        -- async, same as rpc/tailscale set_config; ~50s outage on mips devices
+        ngx.pipe.spawn({"/usr/bin/gl_tailscale", "restart"})
+        return { live = false }
+    end
+
+    -- an exit node is already in use: the routing scaffold (fwmark rule, routes)
+    -- is in place, so switching or clearing is a pure pref change, no restart
+    local cmd
+    if ip ~= "" then
+        cmd = {"/usr/sbin/tailscale", "set", "--exit-node=" .. ip, "--exit-node-allow-lan-access"}
+    else
+        cmd = {"/usr/sbin/tailscale", "set", "--exit-node="}
+    end
+    local proc = ngx.pipe.spawn(cmd)
+    if not proc then
+        return { err_code = -1, err_msg = "failed to spawn tailscale set" }
+    end
+    local stderr = proc:stderr_read_all()
+    local ok, _, status = proc:wait()
+    if not ok or (status and status ~= 0) then
+        return { err_code = -1, err_msg = "tailscale set failed: " .. (stderr or "unknown error") }
+    end
+
+    return { live = true }
+end
+
+return M

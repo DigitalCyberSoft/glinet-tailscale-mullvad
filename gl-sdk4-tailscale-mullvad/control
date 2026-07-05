@@ -1,0 +1,8 @@
+Package: gl-sdk4-tailscale-mullvad
+Version: 0.1.0-1
+Depends: libc, gl-sdk4-tailscale, gl-sdk4-ui-tailscaleview, tailscale, lua, libuci-lua
+Source: glinet-tailscale-mullvad
+SourceName: gl-sdk4-tailscale-mullvad
+Section: base
+Architecture: all
+Description:  Mullvad exit-node picker (country/city with flags) for the GL.iNet Tailscale panel

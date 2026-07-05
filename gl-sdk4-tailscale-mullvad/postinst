@@ -1,0 +1,22 @@
+#!/bin/sh
+# Splice the Mullvad picker into the installed Tailscale view bundle and make
+# the new "mullvad" RPC object live. Fails loudly: a partial install here would
+# present a panel without the feature while opkg reports success.
+
+VIEW=/www/views/gl-sdk4-ui-tailscaleview.common.js.gz
+
+if [ ! -f "$VIEW" ]; then
+    echo "gl-sdk4-tailscale-mullvad: $VIEW not found; install the GL Tailscale panel (gl-sdk4-ui-tailscaleview) first" >&2
+    exit 1
+fi
+
+lua /usr/libexec/tailscale-mullvad/patch-view.lua apply || exit 1
+
+# nginx caches RPC handler code per worker; reload so /rpc sees the new
+# "mullvad" object. If nginx is not running (offline/imagebuilder install)
+# there is nothing to reload and the handler loads on first start.
+if [ -f /var/run/nginx.pid ] || pgrep nginx >/dev/null 2>&1; then
+    nginx -s reload || echo "gl-sdk4-tailscale-mullvad: nginx reload failed; restart nginx manually" >&2
+fi
+
+exit 0

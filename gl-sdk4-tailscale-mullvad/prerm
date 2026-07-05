@@ -1,0 +1,10 @@
+#!/bin/sh
+# Restore the pristine view bundle before our files disappear.
+
+lua /usr/libexec/tailscale-mullvad/patch-view.lua remove || exit 1
+
+if [ -f /var/run/nginx.pid ] || pgrep nginx >/dev/null 2>&1; then
+    nginx -s reload || echo "gl-sdk4-tailscale-mullvad: nginx reload failed; restart nginx manually" >&2
+fi
+
+exit 0
