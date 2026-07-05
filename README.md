@@ -46,16 +46,24 @@ this package) afterwards.
 ### Surviving firmware upgrades
 
 sysupgrade replaces the rootfs, wiping every opkg-installed file under `/usr`
-and the patched bundle under `/www`. postinst therefore stashes the payload +
-`restore.sh` in `/etc/tailscale-mullvad/`, preserved through upgrades via both
-`/lib/upgrade/keep.d/gl-sdk4-tailscale-mullvad` and an entry in
-`/etc/sysupgrade.conf`, and hooks `restore.sh` from `/etc/rc.local` (rc.local
-itself is forced into `sysupgrade.conf`). On first boot after an upgrade,
-restore.sh reinstates the RPC handler and re-patches the new firmware's view
-bundle; if the new bundle's anchors don't match, it fails closed and logs to
-`/tmp/tsmullvad-restore.log`, leaving the stock panel untouched. Restored files
-are functional immediately but unknown to opkg until you reinstall the package
-from the feed. `opkg remove` undoes all persistence hooks.
+and the patched bundle under `/www`. Two layers guard against that:
+
+1. `/lib/upgrade/keep.d/gl-sdk4-tailscale-mullvad` lists the package's own
+   files directly (sysupgrade honoring keep.d for arbitrary paths is verified
+   on a GL-E750, OpenWrt 22.03.4 — see glinet-tailscale-feed commit 9ffb49e,
+   which preserves the whole panel the same way), plus the pristine-bundle
+   backup so `remove` keeps working after an upgrade.
+2. postinst additionally stashes the payload + `restore.sh` in
+   `/etc/tailscale-mullvad/` (also in keep.d and `/etc/sysupgrade.conf`) and
+   hooks `restore.sh` from `/etc/rc.local`. On first boot after an upgrade it
+   no-ops if everything survived; otherwise it reinstates the RPC handler and
+   re-patches the firmware's view bundle. This is what handles a **stock**
+   firmware upgrade that ships a *new* panel bundle: the patcher re-patches it
+   and refreshes the pristine backup, or fails closed (logging to
+   `/tmp/tsmullvad-restore.log`) if the new bundle's anchors don't match.
+
+Files restored by layer 2 are functional immediately but unknown to opkg until
+you reinstall the package from the feed. `opkg remove` undoes all hooks.
 
 ## Scope / verified against
 

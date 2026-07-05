@@ -96,12 +96,13 @@ local function apply()
     end
 
     local src = gunzip(VIEW)
+    local was_patched = src:find("/*tsmullvad:", 1, true) ~= nil
 
     if src:find(MARK, 1, true) then
         print("tsmullvad patch-view: already applied (" .. MARK .. ")")
         os.exit(0)
     end
-    if src:find("/*tsmullvad:", 1, true) then
+    if was_patched then
         -- older patch version present: rebuild from the pristine backup
         local orig = read_file(BACKUP)
         if not orig then
@@ -135,7 +136,10 @@ local function apply()
 
     src = MARK .. src
 
-    if not read_file(BACKUP) then
+    if not was_patched then
+        -- an unmarked bundle IS the pristine one for this firmware: always
+        -- refresh the backup, or a firmware upgrade would leave a stale backup
+        -- from the previous firmware shadowing the new pristine bundle
         run("cp '" .. VIEW .. "' '" .. BACKUP .. "'")
     end
     gzip_to(src, VIEW)

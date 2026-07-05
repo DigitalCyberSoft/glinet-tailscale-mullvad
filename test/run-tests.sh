@@ -44,9 +44,22 @@ MARKS=$(grep -o 'tsmullvad:v[0-9]*' "$T/upgraded.js" | wc -l)
 node --check "$T/upgraded.js" || { echo "FAIL: upgraded bundle does not parse"; exit 1; }
 echo "upgrade from older patch version: rebuilt from backup, single marker, parses"
 
+# stock-firmware-upgrade path: keep.d preserved a stale backup, but the new
+# firmware shipped a fresh unpatched bundle; apply must refresh the backup from
+# the NEW pristine bundle, not leave the old firmware's copy shadowing it
+{ cat "$HERE/view-reference.js"; echo "/*newfw*/"; } | gzip -c > "$T/www/views/gl-sdk4-ui-tailscaleview.common.js.gz"
+TSMV_ROOT="$T" lua "$PATCHER" apply
+gunzip -c "$T/www/views/gl-sdk4-ui-tailscaleview.common.js.gz.tsmullvad-orig" | grep -q 'newfw' \
+  || { echo "FAIL: backup not refreshed from the new firmware's pristine bundle"; exit 1; }
+gunzip -c "$T/www/views/gl-sdk4-ui-tailscaleview.common.js.gz" > "$T/newfw-patched.js"
+node --check "$T/newfw-patched.js" \
+  || { echo "FAIL: re-patched new-firmware bundle does not parse"; exit 1; }
+echo "stock-fw-upgrade: new bundle re-patched, backup refreshed to new pristine"
+NEWFW_SUM=$({ cat "$HERE/view-reference.js"; echo "/*newfw*/"; } | sha256sum | cut -d' ' -f1)
+
 TSMV_ROOT="$T" lua "$PATCHER" remove
 RESTORED_SUM=$(gunzip -c "$T/www/views/gl-sdk4-ui-tailscaleview.common.js.gz" | sha256sum | cut -d' ' -f1)
-[ "$ORIG_SUM" = "$RESTORED_SUM" ] || { echo "FAIL: restore is not byte-identical"; exit 1; }
+[ "$NEWFW_SUM" = "$RESTORED_SUM" ] || { echo "FAIL: restore is not byte-identical to the current pristine"; exit 1; }
 [ ! -f "$T/www/views/gl-sdk4-ui-tailscaleview.common.js.gz.tsmullvad-orig" ] || { echo "FAIL: backup left behind"; exit 1; }
 echo "remove: original restored byte-identical"
 

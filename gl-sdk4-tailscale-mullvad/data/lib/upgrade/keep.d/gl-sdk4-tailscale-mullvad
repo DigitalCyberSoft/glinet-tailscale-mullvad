@@ -1,1 +1,5 @@
 /etc/tailscale-mullvad/
+/usr/lib/oui-httpd/rpc/mullvad
+/usr/libexec/tailscale-mullvad/
+/usr/share/tailscale-mullvad/
+/www/views/gl-sdk4-ui-tailscaleview.common.js.gz.tsmullvad-orig
