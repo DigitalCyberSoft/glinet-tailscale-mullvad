@@ -80,12 +80,12 @@ end
 function M.get_nodes(params)
     local c = uci.cursor()
     if c:get("tailscale", "settings", "enabled") ~= "1" then
-        return { supported = false }
+        return { supported = false, reason = "disabled" }
     end
 
     local r = tailscale_status()
     if not r or not r.Peer or type(r.Peer) ~= "table" then
-        return { supported = false }
+        return { supported = false, reason = "status_unavailable" }
     end
 
     local cur = current_exit_ip(r)
@@ -143,6 +143,8 @@ function M.get_nodes(params)
     if #countries > 0 then
         res.supported = true
         res.countries = countries
+    else
+        res.reason = "no_nodes"
     end
 
     return res
