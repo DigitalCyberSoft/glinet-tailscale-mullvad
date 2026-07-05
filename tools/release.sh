@@ -1,14 +1,22 @@
 #!/bin/sh
-# Build, verify, and publish into the opkg feed working copy (../glinet-tailscale).
+# Build, verify, and stage into the glinet-tailscale-feed working copy.
+#
+# The feed's Pages site is assembled by its CI (tools/assemble_site.sh), which
+# seeds every arch dir from gui/*_all.ipk - so publishing this arch-all package
+# means: drop the ipk into gui/, commit, push, and let build-feed.yml deploy
+# (daily cron, or `gh workflow run build-feed.yml` to publish immediately).
 set -e
 HERE=$(cd "$(dirname "$0")" && pwd)
 REPO=$(dirname "$HERE")
 FEED=${FEED_DIR:-"$REPO/../glinet-tailscale"}
 
-[ -d "$FEED/all" ] || { echo "feed dir $FEED/all not found (set FEED_DIR)"; exit 1; }
+[ -d "$FEED/gui" ] || { echo "feed checkout not found at $FEED (set FEED_DIR)"; exit 1; }
 
 "$REPO/build.py"
-cp "$REPO"/out/*.ipk "$FEED/all/"
-"$HERE/mkindex.py" "$FEED/all"
-echo "published to $FEED/all:"
-ls -l "$FEED/all"
+# drop any older revision first: assemble_site.sh copies gui/*_all.ipk wholesale,
+# and two revisions of the same package would both land in the served feed
+rm -f "$FEED"/gui/gl-sdk4-tailscale-mullvad_*.ipk
+cp "$REPO"/out/gl-sdk4-tailscale-mullvad_*.ipk "$FEED/gui/"
+echo "staged into $FEED/gui:"
+ls -l "$FEED"/gui/gl-sdk4-tailscale-mullvad_*.ipk
+echo "now commit + push the feed repo; CI publishes on the next build-feed run"

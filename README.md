@@ -7,8 +7,10 @@ enabled on your tailnet **and the router assigned to Mullvad** in the Tailscale
 admin console (Mullvad access is per-device).
 
 Companion to [glinet-tailscale-feed](https://github.com/DigitalCyberSoft/glinet-tailscale-feed)
-(which restores the Tailscale panel itself). Built packages are published in the
-[glinet-tailscale](../glinet-tailscale) opkg feed repo.
+(which restores the Tailscale panel itself). The built ipk is published through
+that same feed: `tools/release.sh` stages it into the feed checkout's `gui/`
+directory, and the feed's CI fans `gui/*_all.ipk` into every arch dir of the
+Pages site (see its `tools/assemble_site.sh`).
 
 ## How it works
 
@@ -56,7 +58,7 @@ this package) afterwards.
 ./build.py                                  # verify (anchors + node --check) + build -> out/
 tailscale status --json > /tmp/status.json  # on any Mullvad-enabled tailnet device
 test/run-tests.sh /tmp/status.json          # patcher e2e + differential rpc tests
-tools/release.sh                            # build + publish into ../glinet-tailscale/all
+tools/release.sh                            # build + stage into ../glinet-tailscale/gui/
 ```
 
 `test/run-tests.sh` needs `lua`, `node`, `python3`. It round-trips the patcher
@@ -66,11 +68,11 @@ grouping against an independent Python implementation.
 
 ## Install (on the router)
 
+Same feed as the panel itself — if glinet-tailscale-feed is already configured
+(see its INSTALL.md for the `src/gz glits .../<arch>` line and why
+`--force-signature` is needed), it is just:
+
 ```sh
-echo "src/gz glitsmv https://digitalcybersoft.github.io/glinet-tailscale/all" >> /etc/opkg/customfeeds.conf
-opkg update --force-signature
+opkg update  --force-signature
 opkg install --force-signature gl-sdk4-tailscale-mullvad
 ```
-
-(The feed is unsigned; GL opkg ships with signature checking on — same
-`--force-signature` dance as glinet-tailscale-feed, see its INSTALL.md.)
