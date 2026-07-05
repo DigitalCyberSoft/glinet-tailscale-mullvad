@@ -1,7 +1,13 @@
 #!/bin/sh
-# Restore the pristine view bundle before our files disappear.
+# Restore the pristine view bundle before our files disappear, and take the
+# firmware-upgrade persistence hooks with us. The /etc/rc.local entry in
+# /etc/sysupgrade.conf stays: it is generic and may serve the user elsewhere.
 
 lua /usr/libexec/tailscale-mullvad/patch-view.lua remove || exit 1
+
+sed -i "\\#tailscale-mullvad/restore.sh#d" /etc/rc.local 2>/dev/null
+sed -i "\\#^/etc/tailscale-mullvad/\$#d" /etc/sysupgrade.conf 2>/dev/null
+rm -rf /etc/tailscale-mullvad
 
 if [ -f /var/run/nginx.pid ] || pgrep nginx >/dev/null 2>&1; then
     nginx -s reload || echo "gl-sdk4-tailscale-mullvad: nginx reload failed; restart nginx manually" >&2

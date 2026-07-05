@@ -19,4 +19,33 @@ if [ -f /var/run/nginx.pid ] || pgrep nginx >/dev/null 2>&1; then
     nginx -s reload || echo "gl-sdk4-tailscale-mullvad: nginx reload failed; restart nginx manually" >&2
 fi
 
+# --- survive firmware upgrades ---------------------------------------------
+# sysupgrade replaces the rootfs: everything opkg put under /usr and /www is
+# gone afterwards. Stash the payload + restore script under /etc/tailscale-
+# mullvad (preserved via keep.d and /etc/sysupgrade.conf) and hook restore.sh
+# from /etc/rc.local (also forced into sysupgrade.conf) so the picker
+# reinstalls itself on first boot after an upgrade.
+P=/etc/tailscale-mullvad
+mkdir -p "$P/payload"
+cp /usr/lib/oui-httpd/rpc/mullvad                    "$P/payload/rpc-mullvad"
+cp /usr/libexec/tailscale-mullvad/patch-view.lua     "$P/payload/patch-view.lua"
+cp /usr/share/tailscale-mullvad/render.js            "$P/payload/render.js"
+cp /usr/share/tailscale-mullvad/block.js             "$P/payload/block.js"
+cp /usr/libexec/tailscale-mullvad/restore.sh         "$P/restore.sh"
+chmod 755 "$P/restore.sh"
+
+touch /etc/sysupgrade.conf
+grep -qx "/etc/tailscale-mullvad/" /etc/sysupgrade.conf \
+    || echo "/etc/tailscale-mullvad/" >> /etc/sysupgrade.conf
+grep -qx "/etc/rc.local" /etc/sysupgrade.conf \
+    || echo "/etc/rc.local" >> /etc/sysupgrade.conf
+
+if ! grep -q "tailscale-mullvad/restore.sh" /etc/rc.local 2>/dev/null; then
+    if [ -f /etc/rc.local ] && grep -q "^exit 0" /etc/rc.local; then
+        sed -i "s#^exit 0#[ -x /etc/tailscale-mullvad/restore.sh ] \&\& /etc/tailscale-mullvad/restore.sh\nexit 0#" /etc/rc.local
+    else
+        echo "[ -x /etc/tailscale-mullvad/restore.sh ] && /etc/tailscale-mullvad/restore.sh" >> /etc/rc.local
+    fi
+fi
+
 exit 0

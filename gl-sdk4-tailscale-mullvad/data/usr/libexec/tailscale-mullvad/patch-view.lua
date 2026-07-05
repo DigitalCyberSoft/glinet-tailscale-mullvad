@@ -17,10 +17,14 @@ local ROOT   = os.getenv("TSMV_ROOT") or ""
 local VIEW   = ROOT .. "/www/views/gl-sdk4-ui-tailscaleview.common.js.gz"
 local BACKUP = VIEW .. ".tsmullvad-orig"
 local SHARE  = ROOT .. "/usr/share/tailscale-mullvad"
-local MARK   = "/*tsmullvad:v1*/"
+local MARK   = "/*tsmullvad:v2*/"
 
--- plain-string anchors in the minified bundle (view git-2025.244.27716-e9a0fdd)
-local A_RENDER = ',t.hasDnsWarning?e("li"'   -- insert picker <li> before the DNS row
+-- plain-string anchors in the minified bundle (verified in the feed's view
+-- git-2025.244.27716-e9a0fdd AND the stock XE3000 4.8 bundle)
+-- v2: the picker <li> goes BEFORE the `config.manual ? [exit-node...] : [wan/lan...]`
+-- ternary, i.e. right under the "Custom Exit Node" row and always rendered; the
+-- v1 anchor placed it inside the manual-on branch, hiding it behind that toggle.
+local A_RENDER = ',t.config.manual?[e("li"'
 local A_BLOCK  = "p=d.exports;e.default=p"   -- wrap component options before export
 
 local function die(msg)

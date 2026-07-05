@@ -43,6 +43,20 @@ this package) afterwards.
   see `gl_tailscale` lines 183–226 in the feed). ~50 s outage on mips devices;
   the UI warns before doing this.
 
+### Surviving firmware upgrades
+
+sysupgrade replaces the rootfs, wiping every opkg-installed file under `/usr`
+and the patched bundle under `/www`. postinst therefore stashes the payload +
+`restore.sh` in `/etc/tailscale-mullvad/`, preserved through upgrades via both
+`/lib/upgrade/keep.d/gl-sdk4-tailscale-mullvad` and an entry in
+`/etc/sysupgrade.conf`, and hooks `restore.sh` from `/etc/rc.local` (rc.local
+itself is forced into `sysupgrade.conf`). On first boot after an upgrade,
+restore.sh reinstates the RPC handler and re-patches the new firmware's view
+bundle; if the new bundle's anchors don't match, it fails closed and logs to
+`/tmp/tsmullvad-restore.log`, leaving the stock panel untouched. Restored files
+are functional immediately but unknown to opkg until you reinstall the package
+from the feed. `opkg remove` undoes all persistence hooks.
+
 ## Scope / verified against
 
 * View bundle `gl-sdk4-ui-tailscaleview` **git-2025.244.27716-e9a0fdd** (the

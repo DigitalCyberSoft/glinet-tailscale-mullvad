@@ -27,9 +27,9 @@ PKG  = os.path.join(HERE, "gl-sdk4-tailscale-mullvad")
 OUT  = os.path.join(HERE, "out")
 
 # must stay in sync with data/usr/libexec/tailscale-mullvad/patch-view.lua
-A_RENDER = ',t.hasDnsWarning?e("li"'
+A_RENDER = ',t.config.manual?[e("li"'
 A_BLOCK  = "p=d.exports;e.default=p"
-MARK     = "/*tsmullvad:v1*/"
+MARK     = "/*tsmullvad:v2*/"
 
 
 def read(path):
@@ -90,7 +90,7 @@ def make_tar_gz(src_dir, out_path, executables=()):
         for full, rel in entries:
             ti = tar.gettarinfo(full, rel)
             ti.uid = ti.gid = 0; ti.uname = ti.gname = ""; ti.mtime = 0
-            if rel.lstrip("./") in executables or full.endswith(".lua"):
+            if rel.lstrip("./") in executables or full.endswith((".lua", ".sh")):
                 ti.mode = 0o755
             if ti.isreg():
                 with open(full, "rb") as f:

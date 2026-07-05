@@ -22,7 +22,7 @@ ORIG_SUM=$(gunzip -c "$T/www/views/gl-sdk4-ui-tailscaleview.common.js.gz" | sha2
 
 TSMV_ROOT="$T" lua "$PATCHER" apply
 gunzip -c "$T/www/views/gl-sdk4-ui-tailscaleview.common.js.gz" > "$T/patched.js"
-grep -q 'tsmullvad:v1' "$T/patched.js" || { echo "FAIL: marker missing after apply"; exit 1; }
+grep -q 'tsmullvad:v[0-9]' "$T/patched.js" || { echo "FAIL: marker missing after apply"; exit 1; }
 node --check "$T/patched.js" || { echo "FAIL: patched bundle does not parse"; exit 1; }
 [ -f "$T/www/views/gl-sdk4-ui-tailscaleview.common.js.gz.tsmullvad-orig" ] || { echo "FAIL: no backup"; exit 1; }
 echo "apply: marker present, bundle parses, backup created"
@@ -30,13 +30,34 @@ echo "apply: marker present, bundle parses, backup created"
 TSMV_ROOT="$T" lua "$PATCHER" apply | grep -q "already applied" || { echo "FAIL: not idempotent"; exit 1; }
 echo "apply twice: idempotent"
 
+# upgrade path: a bundle carrying an OLDER tsmullvad marker must be rebuilt
+# from the pristine backup, not patched on top of the old patch
+gunzip -c "$T/www/views/gl-sdk4-ui-tailscaleview.common.js.gz" \
+  | sed 's|/\*tsmullvad:v[0-9]*\*/|/*tsmullvad:v0*/|' \
+  | gzip -c > "$T/www/views/old.gz"
+mv "$T/www/views/old.gz" "$T/www/views/gl-sdk4-ui-tailscaleview.common.js.gz"
+TSMV_ROOT="$T" lua "$PATCHER" apply
+gunzip -c "$T/www/views/gl-sdk4-ui-tailscaleview.common.js.gz" > "$T/upgraded.js"
+grep -q 'tsmullvad:v0' "$T/upgraded.js" && { echo "FAIL: old marker survived upgrade"; exit 1; }
+MARKS=$(grep -o 'tsmullvad:v[0-9]*' "$T/upgraded.js" | wc -l)
+[ "$MARKS" = 1 ] || { echo "FAIL: expected exactly 1 marker after upgrade, got $MARKS"; exit 1; }
+node --check "$T/upgraded.js" || { echo "FAIL: upgraded bundle does not parse"; exit 1; }
+echo "upgrade from older patch version: rebuilt from backup, single marker, parses"
+
 TSMV_ROOT="$T" lua "$PATCHER" remove
 RESTORED_SUM=$(gunzip -c "$T/www/views/gl-sdk4-ui-tailscaleview.common.js.gz" | sha256sum | cut -d' ' -f1)
 [ "$ORIG_SUM" = "$RESTORED_SUM" ] || { echo "FAIL: restore is not byte-identical"; exit 1; }
 [ ! -f "$T/www/views/gl-sdk4-ui-tailscaleview.common.js.gz.tsmullvad-orig" ] || { echo "FAIL: backup left behind"; exit 1; }
 echo "remove: original restored byte-identical"
 
-echo "== 3. rpc/mullvad against captured tailnet data (differential vs python) =="
+echo "== 3. shell scripts parse (busybox-sh compatible syntax) =="
+for s in "$REPO/gl-sdk4-tailscale-mullvad/postinst" "$REPO/gl-sdk4-tailscale-mullvad/prerm" \
+         "$REPO/gl-sdk4-tailscale-mullvad/data/usr/libexec/tailscale-mullvad/restore.sh"; do
+  sh -n "$s" || { echo "FAIL: $s does not parse"; exit 1; }
+done
+echo "postinst, prerm, restore.sh parse"
+
+echo "== 4. rpc/mullvad against captured tailnet data (differential vs python) =="
 python3 - "$STATUS" > "$T/expected.txt" <<'EOF'
 import json, sys
 d = json.load(open(sys.argv[1]))
